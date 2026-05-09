@@ -55,3 +55,9 @@ verified.
   hardware (USB vendor/product IDs, bridge name, etc.).
 - **Watch out:** boxes call out known failure modes and how to
   recover.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). You may
+fork, adapt, and redistribute this runbook as long as you preserve
+the license notice.

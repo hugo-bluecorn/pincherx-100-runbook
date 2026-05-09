@@ -13,8 +13,12 @@ path.
 - **Host**: dual-boot Ubuntu 24.04 LTS and Ubuntu 26.04 LTS on the same drive,
   sharing a common partition for VM storage so the same qcow2 boots from
   either host without copying.
-- **Guest**: Ubuntu 22.04 LTS in QEMU/KVM, managed via libvirt and
-  virt-manager. ROS 2 Humble's required Tier-1 platform.
+- **Guest**: Kubuntu 22.04 LTS desktop in QEMU/KVM, installed with the
+  installer's "minimal installation" option, managed via libvirt and
+  virt-manager. Same Jammy base that ROS 2 Humble lists as its Tier-1
+  platform — KDE Plasma vs GNOME does not affect ROS 2. Kubuntu chosen
+  over stock Ubuntu/GNOME because it most closely matches the target
+  Bluecorn end-user environment.
 - **Robot**: Trossen Interbotix PincherX-100, single arm.
 - **Robot interface**: U2D2 USB-serial adapter (FTDI FT232H, vendor 0x0403,
   product 0x6014) passed through to the guest via libvirt `<hostdev>`. Host
@@ -58,9 +62,11 @@ path.
    libvirt-clients, virt-manager. Add user to libvirt and kvm groups.
    Verify KVM with kvm-ok. Verify libvirt's default NAT network
    (`virbr0`) is autostarted; do not create a host bridge.
-2. **Guest provisioning** — create Ubuntu 22.04 LTS guest with 4 vCPU, 8 GB
-   RAM, 60 GB virtio disk, virtio NIC on libvirt's default NAT network.
-   Install from ISO. Take a libvirt snapshot of the clean install.
+2. **Guest provisioning** — create Kubuntu 22.04 LTS guest with 4 vCPU,
+   8 GB RAM, 60 GB virtio disk, virtio NIC on libvirt's default NAT
+   network. Install from the Kubuntu 22.04 desktop ISO using the
+   "minimal installation" option. Take a libvirt snapshot of the clean
+   install.
 3. **Trossen software install** — run `xsarm_amd64_install.sh -d humble`
    inside the guest. Reboot the guest. Verify the 27 expected interbotix_*
    packages appear in `ros2 pkg list`.

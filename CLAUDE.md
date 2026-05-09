@@ -23,12 +23,16 @@ path.
 - **Camera**: Intel RealSense D415 via USB 3.0 pass-through. Deferred until
   the arm control path is verified end-to-end.
 - **Graphics**: rviz and other 3D ROS 2 GUI tooling run **inside** the
-  guest. Guest video is `virtio-gpu` with virgl3D acceleration; SPICE
+  guest. Initial path: `virtio-gpu` with virgl3D acceleration; SPICE
   display with `<gl enable='yes'/>`. No GPU passthrough, no IOMMU, no
   kernel-parameter changes. Per [Ubuntu's GPU-virtualisation-with-QEMU/KVM
   page](https://ubuntu.com/server/docs/how-to/graphics/gpu-virtualization-with-qemu-kvm/),
   this is the right path for a laptop with integrated graphics that
-  needs in-guest 3D without dedicated-GPU passthrough.
+  needs in-guest 3D without dedicated-GPU passthrough. Higher-performance
+  options (VFIO GPU passthrough, Intel GVT-g, NVIDIA vGPU, Looking-Glass)
+  are deferred to a future exploration track and revisited if rviz
+  performance is inadequate, heavier 3D workloads (CUDA/Isaac) are
+  added, or the user opts in.
 - **Network**: libvirt default NAT network (`virbr0`). All DDS
   participants — the ROS 2 nodes and `zenoh-bridge-ros2dds` — live
   inside the guest, so DDS multicast discovery is bounded to the

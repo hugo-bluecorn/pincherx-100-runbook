@@ -22,8 +22,15 @@ path.
   pass-through.
 - **Camera**: Intel RealSense D415 via USB 3.0 pass-through. Deferred until
   the arm control path is verified end-to-end.
-- **Network bridge**: bridged libvirt network (not NAT) for ROS 2 multicast
-  discovery. RMW: default FastDDS unless it proves unreliable in the
+- **Network**: libvirt default NAT network (`virbr0`). All DDS
+  participants — the ROS 2 nodes and `zenoh-bridge-ros2dds` — live
+  inside the guest, so DDS multicast discovery is bounded to the
+  guest's loopback and never has to traverse the host boundary. The
+  only data flow that exits the guest is Zenoh (TCP/QUIC unicast),
+  which the Flutter client reaches via a host→guest port-forward
+  configured when the Flutter integration is wired up. This removes
+  the need for a host bridge and is compatible with a Wi-Fi-only host.
+  RMW: default FastDDS unless it proves unreliable in the
   virtualized network path, in which case fall back to CycloneDDS
   (`ros-humble-rmw-cyclonedds-cpp`, `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`).
 - **External middleware**: zenoh-bridge-ros2dds standalone binary inside the
@@ -37,11 +44,12 @@ path.
 ## Implementation phases (in order)
 
 1. **Host preparation** — install qemu-kvm, libvirt-daemon-system,
-   libvirt-clients, bridge-utils, virt-manager. Add user to libvirt and kvm
-   groups. Verify KVM with kvm-ok. Create the bridged libvirt network.
+   libvirt-clients, virt-manager. Add user to libvirt and kvm groups.
+   Verify KVM with kvm-ok. Verify libvirt's default NAT network
+   (`virbr0`) is autostarted; do not create a host bridge.
 2. **Guest provisioning** — create Ubuntu 22.04 LTS guest with 4 vCPU, 8 GB
-   RAM, 60 GB virtio disk, virtio NIC on the bridged network. Install from
-   ISO. Take a libvirt snapshot of the clean install.
+   RAM, 60 GB virtio disk, virtio NIC on libvirt's default NAT network.
+   Install from ISO. Take a libvirt snapshot of the clean install.
 3. **Trossen software install** — run `xsarm_amd64_install.sh -d humble`
    inside the guest. Reboot the guest. Verify the 27 expected interbotix_*
    packages appear in `ros2 pkg list`.

@@ -21,8 +21,8 @@ the same network.
 
 | #  | File                                | What it does                                                                |
 |----|-------------------------------------|-----------------------------------------------------------------------------|
-| 01 | `01-host-preparation.md`            | Install qemu-kvm + libvirt + bridge-utils + virt-manager; verify KVM; create bridged libvirt network |
-| 02 | `02-guest-provisioning.md`          | Create Ubuntu 22.04 LTS guest with virtio disk, virtio NIC on bridge, qemu-xhci controller |
+| 01 | `01-host-preparation.md`            | Install qemu-kvm + libvirt + virt-manager; verify KVM; verify default NAT network is up |
+| 02 | `02-guest-provisioning.md`          | Create Ubuntu 22.04 LTS guest with virtio disk, virtio NIC on default NAT, qemu-xhci controller |
 | 03 | `03-trossen-software-install.md`    | Run `xsarm_amd64_install.sh -d humble` inside the guest; verify packages    |
 | 04 | `04-hardware-integration.md`        | Host udev rules for U2D2; pass U2D2 through to the guest                    |
 | 05 | `05-functional-verification.md`     | Power on the arm; run torque + bartender demos; confirm telemetry           |

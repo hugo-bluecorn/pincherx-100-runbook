@@ -22,6 +22,13 @@ path.
   pass-through.
 - **Camera**: Intel RealSense D415 via USB 3.0 pass-through. Deferred until
   the arm control path is verified end-to-end.
+- **Graphics**: rviz and other 3D ROS 2 GUI tooling run **inside** the
+  guest. Guest video is `virtio-gpu` with virgl3D acceleration; SPICE
+  display with `<gl enable='yes'/>`. No GPU passthrough, no IOMMU, no
+  kernel-parameter changes. Per [Ubuntu's GPU-virtualisation-with-QEMU/KVM
+  page](https://ubuntu.com/server/docs/how-to/graphics/gpu-virtualization-with-qemu-kvm/),
+  this is the right path for a laptop with integrated graphics that
+  needs in-guest 3D without dedicated-GPU passthrough.
 - **Network**: libvirt default NAT network (`virbr0`). All DDS
   participants — the ROS 2 nodes and `zenoh-bridge-ros2dds` — live
   inside the guest, so DDS multicast discovery is bounded to the
@@ -60,7 +67,8 @@ path.
 5. **Functional verification** — power on the arm. Launch
    `interbotix_xsarm_control` for the px100 model. Run torque on/off services
    and the bartender demo. Confirm joint state telemetry, motion commands,
-   clean shutdown.
+   clean shutdown. Launch rviz with the PincherX-100 URDF and confirm 3D
+   visualization renders via virtio-gpu/virgl.
 6. **Golden image** — `virt-clone` the working VM. Preserve the original
    untouched. Future experimentation occurs on clones.
 7. **Zenoh bridge integration** — install zenoh-bridge-ros2dds standalone

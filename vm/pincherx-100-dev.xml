@@ -1,0 +1,166 @@
+<!--
+  Canonical libvirt domain XML for the PincherX-100 development guest.
+
+  Per project convention (CLAUDE.md), this is the source of truth for
+  the VM definition. Any host (Kubuntu 24.04 today, Ubuntu 26.04 later)
+  recreates the VM with:
+      virsh define pincherx-100-dev.xml
+
+  Design summary:
+    - Q35 + KVM + UEFI (libvirt auto-selects OVMF). 4 vCPU, 8 GiB RAM.
+    - 60 GiB virtio-blk qcow2 at /var/lib/libvirt/images/pincherx-100.qcow2
+      (default libvirt images dir; pre-created with `qemu-img create`).
+    - virtio-net on libvirt's default NAT network (virbr0). All DDS
+      multicast stays inside the guest; the only flow that exits is
+      Zenoh unicast, set up in Phase 7.
+    - qemu-xhci USB controller for U2D2 + RealSense pass-through (Phase 4+).
+    - virtio-gpu video with virgl3D acceleration; SPICE graphics with
+      gl=on, listen='none' (local-only via virt-manager / virt-viewer).
+      Per Ubuntu's GPU-virtualisation-with-QEMU/KVM doc, this is the
+      right path for a laptop without GPU passthrough.
+    - SPICE agent channel, virtio-rng, virtio memballoon, pty serial
+      console for `virsh console` access.
+
+  Intentionally omitted so libvirt regenerates them per host:
+    - <uuid> (libvirt auto-assigns on define)
+    - MAC address on <interface> (libvirt auto-assigns from 52:54:00:xx:xx:xx)
+    - <seclabel> (libvirt's AppArmor default with dynamic ownership)
+    - PCI slot addresses (libvirt auto-assigns; pin later if reordering bites us)
+
+  Phase 2 attaches the install ISO at install time then removes the
+  <disk device='cdrom'> block and the cdrom boot entry afterward.
+  This file represents the *post-install* steady state — see the
+  runbook for the install-time variant.
+-->
+<domain type='kvm'>
+  <name>pincherx-100-dev</name>
+  <title>PincherX-100 ROS 2 Humble dev VM (Kubuntu 22.04 LTS minimal)</title>
+  <description>Kubuntu 22.04 LTS desktop guest for the Trossen Interbotix PincherX-100 development environment. ROS 2 Humble Tier-1 platform.</description>
+
+  <memory unit='KiB'>8388608</memory>
+  <currentMemory unit='KiB'>8388608</currentMemory>
+  <vcpu placement='static'>4</vcpu>
+
+  <os firmware='efi'>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+
+  <features>
+    <acpi/>
+    <apic/>
+    <vmport state='off'/>
+  </features>
+
+  <cpu mode='host-passthrough' check='none' migratable='on'/>
+
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+  </clock>
+
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+
+  <pm>
+    <suspend-to-mem enabled='no'/>
+    <suspend-to-disk enabled='no'/>
+  </pm>
+
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+
+    <!-- Primary VM disk: virtio-blk qcow2.
+         cache='none' = O_DIRECT, bypasses host page cache (avoids
+           double-caching with the guest's own page cache).
+         io='io_uring' = modern Linux 5.x AIO backend.
+         discard='unmap' = guest TRIM passes through to qcow2,
+           reclaiming clusters when the guest deletes files. -->
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none' io='io_uring' discard='unmap'/>
+      <source file='/var/lib/libvirt/images/pincherx-100.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+
+    <!-- USB controller: qemu-xhci with 15 ports (default 4 USB2 + 4 USB3
+         is too tight once U2D2 + RealSense + libvirt's auto-added tablet
+         + keyboard land on it). Replaces the legacy UHCI/EHCI controllers
+         libvirt would otherwise auto-add on q35. -->
+    <controller type='usb' index='0' model='qemu-xhci' ports='15'/>
+
+    <!-- Networking: libvirt's default NAT bridge (virbr0). MAC omitted
+         so libvirt generates a fresh one on define. -->
+    <interface type='network'>
+      <source network='default'/>
+      <model type='virtio'/>
+    </interface>
+
+    <!-- Serial console + virsh console pty target. Useful for headless
+         debugging (e.g., guest network broken, can't SPICE in). -->
+    <serial type='pty'>
+      <target type='isa-serial' port='0'>
+        <model name='isa-serial'/>
+      </target>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+
+    <!-- SPICE agent channel: clipboard sync, dynamic resolution from
+         virt-manager. Inside the guest, install spice-vdagent (post-install). -->
+    <channel type='spicevmc'>
+      <target type='virtio' name='com.redhat.spice.0'/>
+    </channel>
+
+    <!-- Tablet input gives absolute pointer coords in SPICE, so the
+         host pointer doesn't have to be "captured" by the VM window.
+         libvirt would auto-add this for a desktop guest, but pinning
+         here makes the canonical XML self-contained. -->
+    <input type='tablet' bus='usb'/>
+    <input type='keyboard' bus='usb'/>
+
+    <!-- Graphics: SPICE with OpenGL passthrough (virgl3D). listen='none'
+         = local-only Unix socket; no SPICE TCP listener.
+
+         rendernode= pins which host DRM render node QEMU/SPICE uses for
+         offscreen GL. Without it, libvirt auto-selects, which on hybrid-
+         GPU laptops can pick the discrete GPU (NVIDIA on this host) whose
+         EGL/GBM userspace isn't wired up for virgl, causing
+         `eglInitialize failed: EGL_NOT_INITIALIZED` at VM start.
+
+         Substitution point: this path is host-specific. To find the
+         Intel iGPU's render node on a given host:
+             ls -la /dev/dri/by-path/
+         and pick the `pci-<addr>-render` symlink that points at the iGPU
+         (here: pci-0000:00:02.0-render -> ../renderD128). On a single-
+         GPU host this attribute can be omitted; libvirt's auto-pick is
+         correct. -->
+    <graphics type='spice'>
+      <listen type='none'/>
+      <gl enable='yes' rendernode='/dev/dri/renderD128'/>
+    </graphics>
+
+    <!-- Video: virtio-gpu with 3D acceleration. Pairs with the SPICE
+         <gl enable='yes'/> above so virglrenderer on the host accelerates
+         OpenGL calls from the guest. This is what makes rviz work without
+         GPU passthrough. -->
+    <video>
+      <model type='virtio' heads='1' primary='yes'>
+        <acceleration accel3d='yes'/>
+      </model>
+    </video>
+
+    <!-- Memory ballooning: lets the host reclaim guest memory on demand.
+         Harmless when not actively used. -->
+    <memballoon model='virtio'/>
+
+    <!-- Hardware RNG sourced from host /dev/urandom: feeds guest entropy
+         pool, faster boot and better cryptographic operations early in
+         guest userspace. -->
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+  </devices>
+</domain>

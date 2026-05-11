@@ -1,0 +1,123 @@
+<!--
+  INSTALL-TIME variant of the PincherX-100 dev guest definition.
+
+  Used once during Phase 2 ("Step 4 — Boot the installer"). After
+  Kubuntu 22.04 LTS is installed and verified, redefine the VM from
+  the *canonical* XML at vm/pincherx-100-dev.xml, which drops the
+  CDROM block and resets boot order to disk-only:
+
+      virsh define vm/pincherx-100-dev.xml
+
+  Differences from the canonical XML:
+    1. Adds a <disk device='cdrom'> entry pointing at the Kubuntu ISO
+       at /var/lib/libvirt/images/kubuntu-22.04.5-desktop-amd64.iso.
+    2. Replaces <os><boot dev='hd'/></os> with per-device
+       <boot order='1'/> on the cdrom and <boot order='2'/> on the
+       virtio disk, so we boot from the installer ISO first.
+
+  All other devices, memory, vCPU, machine type, USB controller,
+  graphics, etc. are identical to the canonical XML.
+-->
+<domain type='kvm'>
+  <name>pincherx-100-dev</name>
+  <title>PincherX-100 ROS 2 Humble dev VM (Kubuntu 22.04 LTS minimal) — install media attached</title>
+  <description>Install-time variant; replace with vm/pincherx-100-dev.xml after Kubuntu install completes.</description>
+
+  <memory unit='KiB'>8388608</memory>
+  <currentMemory unit='KiB'>8388608</currentMemory>
+  <vcpu placement='static'>4</vcpu>
+
+  <os firmware='efi'>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <!-- Per-device <boot order='N'/> below; no <boot dev='X'/> here. -->
+  </os>
+
+  <features>
+    <acpi/>
+    <apic/>
+    <vmport state='off'/>
+  </features>
+
+  <cpu mode='host-passthrough' check='none' migratable='on'/>
+
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+  </clock>
+
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+
+  <pm>
+    <suspend-to-mem enabled='no'/>
+    <suspend-to-disk enabled='no'/>
+  </pm>
+
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+
+    <!-- Install media: Kubuntu 22.04 LTS desktop ISO. boot order='1' -->
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='/var/lib/libvirt/images/kubuntu-22.04.5-desktop-amd64.iso'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+      <boot order='1'/>
+    </disk>
+
+    <!-- Primary VM disk. boot order='2' -->
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none' io='io_uring' discard='unmap'/>
+      <source file='/var/lib/libvirt/images/pincherx-100.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+      <boot order='2'/>
+    </disk>
+
+    <controller type='usb' index='0' model='qemu-xhci' ports='15'/>
+
+    <interface type='network'>
+      <source network='default'/>
+      <model type='virtio'/>
+    </interface>
+
+    <serial type='pty'>
+      <target type='isa-serial' port='0'>
+        <model name='isa-serial'/>
+      </target>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+
+    <channel type='spicevmc'>
+      <target type='virtio' name='com.redhat.spice.0'/>
+    </channel>
+
+    <input type='tablet' bus='usb'/>
+    <input type='keyboard' bus='usb'/>
+
+    <!-- rendernode pinned to the Intel iGPU. On hybrid-GPU hosts libvirt's
+         auto-pick can land on the discrete GPU (here: NVIDIA at 01:00.0)
+         whose EGL/GBM userspace isn't wired up for virgl, causing
+         `eglInitialize failed`. See pincherx-100-dev.xml for the full
+         rationale and the by-path lookup pattern for adapting on other hosts. -->
+    <graphics type='spice'>
+      <listen type='none'/>
+      <gl enable='yes' rendernode='/dev/dri/renderD128'/>
+    </graphics>
+
+    <video>
+      <model type='virtio' heads='1' primary='yes'>
+        <acceleration accel3d='yes'/>
+      </model>
+    </video>
+
+    <memballoon model='virtio'/>
+
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+  </devices>
+</domain>

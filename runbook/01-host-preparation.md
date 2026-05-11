@@ -600,7 +600,65 @@ $ apt list --installed 2>/dev/null | grep -i virglrenderer
 
 ---
 
-## Step 9 — Smoke-test virt-manager (optional but recommended)
+## Step 9 — Grant `libvirt-qemu` access to the host DRM render node
+
+**Why:** Phase 2 will configure a virtio-gpu device with virgl3D
+acceleration. When QEMU starts the guest, it opens a host DRM
+render node (`/dev/dri/renderD128` on a single-iGPU host) to set
+up the EGL/GBM context that virglrenderer uses for offscreen GL
+rendering. The render node is mode `0660 root:render` — only
+members of the `render` group can open it.
+
+QEMU under libvirt runs as the `libvirt-qemu` system user. By
+default `libvirt-qemu` is in `kvm` but **not** `render`. Without
+the `render` group, VM start fails with:
+
+```
+qemu-system-x86_64: egl: eglInitialize failed: EGL_NOT_INITIALIZED
+qemu-system-x86_64: egl: render node init failed
+```
+
+This isn't documented on Ubuntu's GPU virtualisation page; it
+surfaced empirically in Phase 2's first VM-start attempt. Add
+`libvirt-qemu` to the `render` group and restart libvirtd so any
+newly-spawned QEMU child inherits the updated supplementary group
+set:
+
+```sh
+$ sudo usermod -aG render libvirt-qemu
+$ sudo systemctl restart libvirtd
+$ id libvirt-qemu
+```
+
+**Verify:** `id libvirt-qemu` output should include `render` (the
+GID varies per host; `getent group render` shows yours) among
+the supplementary groups, in addition to `kvm` and the user's
+own primary group.
+
+**Adapt:** on a hybrid-graphics host (laptop with Intel iGPU +
+NVIDIA / AMD dGPU), there will be multiple render nodes
+(`renderD128`, `renderD129`, …). The `render` group covers all of
+them; which one virgl actually uses is selected per-VM via the
+`<gl rendernode='...'/>` attribute on the `<graphics>` element —
+see [Phase 2's pre-flight inventory](02-guest-provisioning.md)
+and the canonical XML at `vm/pincherx-100-dev.xml` for the
+hybrid-graphics handling.
+
+**Watch out:**
+
+- libvirtd must be restarted after the group change. QEMU child
+  processes inherit supplementary groups via `initgroups()` at
+  fork time; restarting libvirtd guarantees the next VM start
+  picks up the new group set.
+- This grants `libvirt-qemu` read+write on the render node, which
+  is necessary for any 3D-accelerated SPICE display. It does *not*
+  grant access to the card node (`/dev/dri/cardN`), so it does
+  not enable display-driver-level operations like modesetting —
+  exactly the surface we want.
+
+---
+
+## Step 10 — Smoke-test virt-manager (optional but recommended)
 
 **Why:** confirms the GUI works and your group memberships are
 effective in the desktop session.
@@ -637,6 +695,7 @@ Tick all of these before moving on:
 - [ ] `virsh net-list --all` shows `default` as `active` + `autostart yes`
 - [ ] `qemu-system-x86_64 --display help` lists `gtk`; the binary accepts `gl=on`
 - [ ] `apt list --installed | grep virglrenderer` shows `libvirglrenderer1`
+- [ ] `id libvirt-qemu` lists `render` among supplementary groups
 - [ ] `virt-manager` opens and connects to QEMU/KVM cleanly
 
 If you're following this on the second host (Ubuntu 26.04), run

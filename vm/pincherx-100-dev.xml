@@ -90,6 +90,36 @@
          libvirt would otherwise auto-add on q35. -->
     <controller type='usb' index='0' model='qemu-xhci' ports='15'/>
 
+    <!-- U2D2 USB pass-through (Phase 4).
+
+         The Trossen U2D2 is an FTDI FT232H USB-to-serial adapter
+         (vendor 0x0403, product 0x6014) that bridges the host to the
+         Dynamixel servo bus on the PincherX-100. Matching by
+         vendor:product (rather than bus:device) keeps the binding
+         stable across USB port swaps and replugs.
+
+         managed='yes' tells libvirt to auto-detach the device from
+         the host ftdi_sio driver on VM start and reattach it on VM
+         stop. Inside the guest, ftdi_sio re-binds and the udev rule
+         shipped by interbotix_xs_sdk (99-interbotix-udev.rules,
+         installed in Phase 3) creates the /dev/ttyDXL symlink that
+         the Trossen control stack opens.
+
+         IMPORTANT: detach this device before any live snapshot
+         (virsh snapshot-create with the live flag, or virt-manager
+         equivalents). libvirt cannot serialize the USB host
+         device's state into a saved snapshot; the snapshot will
+         either fail or leave the guest with a dangling reference.
+         Disk-only snapshots (the disk-only flag) are safe with the
+         U2D2 attached. See CLAUDE.md "Key constraints" and the
+         qemu_block_qcow2_snapshots memory. -->
+    <hostdev mode='subsystem' type='usb' managed='yes'>
+      <source>
+        <vendor id='0x0403'/>
+        <product id='0x6014'/>
+      </source>
+    </hostdev>
+
     <!-- Networking: libvirt's default NAT bridge (virbr0). MAC omitted
          so libvirt generates a fresh one on define. -->
     <interface type='network'>

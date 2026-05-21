@@ -23,8 +23,8 @@ the same network.
 |----|-------------------------------------|-----------------------------------------------------------------------------|
 | 01 | `01-host-preparation.md`            | Install qemu-kvm + libvirt + virt-manager; verify KVM; verify default NAT network is up |
 | 02 | `02-guest-provisioning.md`          | Create Ubuntu 22.04 LTS guest with virtio disk, virtio NIC on default NAT, qemu-xhci controller |
-| 03 | `03-trossen-software-install.md`    | Run `xsarm_amd64_install.sh -d humble` inside the guest; verify packages    |
-| 04 | `04-hardware-integration.md`        | Host udev rules for U2D2; pass U2D2 through to the guest                    |
+| 03 | `03-trossen-install.md`             | Run `xsarm_amd64_install.sh -d humble` inside the guest; verify packages    |
+| 04 | `04-u2d2-hardware-integration.md`   | Host udev rules for U2D2; pass U2D2 through to the guest                    |
 | 05 | `05-functional-verification.md`     | Power on the arm; run torque + bartender demos; confirm telemetry           |
 | 06 | `06-golden-image.md`                | `virt-clone` the working VM; preserve the original                          |
 | 07 | `07-zenoh-bridge-integration.md`    | Install zenoh-bridge-ros2dds; verify Flutter client subscribes              |
@@ -73,6 +73,33 @@ Robot:
 - **Adapt:** flags values you'll likely change for different
   hardware. Substitute and continue.
 - **Watch out:** known failure modes and how to recover.
+
+## Updating the canonical VM XML
+
+`vm/pincherx-100-dev.xml` is the source of truth for the libvirt
+domain. It intentionally omits `<uuid>`, MAC address, and PCI slot
+addresses so the same file defines fresh domains on different hosts
+(Noble today, Resolute on a sibling boot partition). That design
+choice has one operational consequence: updating the XML for an
+already-defined domain requires `undefine` + `define`, not a plain
+re-define, or libvirt rejects the operation with a UUID collision:
+
+```sh
+$ virsh shutdown pincherx-100-dev          # if running
+$ virsh undefine pincherx-100-dev --keep-nvram
+$ virsh define vm/pincherx-100-dev.xml
+$ virsh start pincherx-100-dev
+```
+
+`--keep-nvram` preserves the OVMF VARS file (UEFI boot order); the
+qcow2 disk is path-referenced from the XML and unaffected. Before
+running `virsh define`, sanity-check the XML with `xmllint --noout
+vm/pincherx-100-dev.xml` — most notably, the XML 1.0 spec forbids
+the literal `--` inside `<!-- ... -->` comments, so any prose that
+mentions CLI flags like `--live` needs rephrasing.
+
+This is the pattern for every phase from 04 onward that touches the
+canonical XML.
 
 ## Adapting this runbook
 
